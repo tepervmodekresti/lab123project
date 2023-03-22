@@ -110,10 +110,6 @@ public class MainActivity extends AppCompatActivity implements TransactionEvents
             try {
                 byte[] trd = stringToHex("9F0206000000000100");
                 boolean ok = transaction(trd);
-                runOnUiThread(()-> {
-                    Toast.makeText(MainActivity.this, ok ? "ok" : "failed", Toast.LENGTH_SHORT).show();
-                });
-
             } catch (Exception ex) {
                 // todo: log error
             }
