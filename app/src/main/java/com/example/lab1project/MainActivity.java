@@ -14,11 +14,42 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.example.lab1project.databinding.ActivityMainBinding;
 import com.google.android.filament.View;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.commons.codec.DecoderException;
 import com.google.firebase.crashlytics.buildtools.reloc.org.apache.commons.codec.binary.Hex;
+
+import java.text.DecimalFormat;
 
 //import org.apache.commons.codec.DecoderException;
 
-public class MainActivity extends AppCompatActivity {
+interface TransactionEvents {
+    String enterPin(int ptc, String amount);
+    void transactionResult(boolean result);
+}
+
+public class MainActivity extends AppCompatActivity implements TransactionEvents {
+    private String pin;
+    ActivityResultLauncher activityResultLauncher;
+    static {
+        System.loadLibrary("lab1project");
+        System.loadLibrary("mbedcrypto");
+    }
+    @Override
+    public String enterPin(int ptc, String amount) {
+        pin = new String();
+        Intent it = new Intent(MainActivity.this, PinpadActivity.class);
+        it.putExtra("ptc", ptc);
+        it.putExtra("amount", amount);
+        synchronized (MainActivity.this) {
+            activityResultLauncher.launch(it);
+            try {
+                MainActivity.this.wait();
+            } catch (Exception ex) {
+                //todo: log error
+            }
+        }
+        return pin;
+    }
+
     public static native byte[] encrypt(byte[] key, byte[] array);
     public static native byte[] decrypt(byte[] key, byte[] array);
     public static native int initRng();
@@ -40,9 +71,8 @@ public class MainActivity extends AppCompatActivity {
         byte [] s = randomBytes(30);
         byte [] e = encrypt(v, s);
         byte [] de = decrypt(v, e);
+
         // Example of a call to a native method
-        TextView tv = binding.sampleButton;
-        tv.setText(stringFromJNI());
         activityResultLauncher  = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 new ActivityResultCallback() {
@@ -51,34 +81,52 @@ public class MainActivity extends AppCompatActivity {
                         if (((ActivityResult) result).getResultCode() == Activity.RESULT_OK) {
                             Intent data = ((ActivityResult) result).getData();
                             // обработка результата
-                            String pin = data.getStringExtra("pin");
-                            Toast.makeText(MainActivity.this, pin, Toast.LENGTH_SHORT).show();
+                            //String pin = data.getStringExtra("pin");
+                            //Toast.makeText(MainActivity.this, pin, Toast.LENGTH_SHORT).show();
+                            pin = data.getStringExtra("pin");
+                            synchronized (MainActivity.this){
+                                MainActivity.this.notify();
+                            }
                         }
                     }
                 });
+
     }
 
     public native String stringFromJNI();
-    public static byte[] stringToHex(String s)
-    {
+    public static byte[] stringToHex(String s) {
         byte[] hex;
-        try
-        {
-            hex = Hex.decodeHex(s.toCharArray());
-        } catch (
-                com.google.firebase.crashlytics.buildtools.reloc.org.apache.commons.codec.DecoderException e) {
-            throw new RuntimeException(e);
-        }
+        try { hex = Hex.decodeHex(s.toCharArray()); }
+        catch (DecoderException ex) { hex = null; }
         return hex;
     }
 
 
     public void onButtonClick(android.view.View view) {
-        Intent it = new Intent(this, PinpadActivity.class);
-        //startActivity(it);
-        activityResultLauncher.launch(it);
-    }
-    ActivityResultLauncher activityResultLauncher;
+//        Intent it = new Intent(this, PinpadActivity.class);
+//        startActivity(it);
+//        activityResultLauncher.launch(it);
+        new Thread(()-> {
+            try {
+                byte[] trd = stringToHex("9F0206000000000100");
+                boolean ok = transaction(trd);
+                runOnUiThread(()-> {
+                    Toast.makeText(MainActivity.this, ok ? "ok" : "failed", Toast.LENGTH_SHORT).show();
+                });
 
+            } catch (Exception ex) {
+                // todo: log error
+            }
+        }).start();
+
+    }
+
+    @Override
+    public void transactionResult(boolean result) {
+        runOnUiThread(()-> {
+            Toast.makeText(MainActivity.this, result ? "ok" : "failed", Toast.LENGTH_SHORT).show();
+        });
+    }
+    public native boolean transaction(byte[] trd);
 }
 
